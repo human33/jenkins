@@ -30,15 +30,7 @@ import hudson.Extension;
 import hudson.Functions;
 import hudson.Util;
 import hudson.console.AnnotatedLargeText;
-import hudson.model.AbstractBuild;
-import hudson.model.AbstractProject;
-import hudson.model.Action;
-import hudson.model.AdministrativeMonitor;
-import hudson.model.Cause;
-import hudson.model.CauseAction;
-import hudson.model.Item;
-import hudson.model.PersistentDescriptor;
-import hudson.model.Run;
+import hudson.model.*;
 import hudson.scm.SCM;
 import hudson.scm.SCMDescriptor;
 import hudson.util.FlushProofOutputStream;
@@ -661,10 +653,36 @@ public class SCMTrigger extends Trigger<Item> {
                     Action[] queueActions = new Action[additionalActions.length + 1];
                     queueActions[0] = new CauseAction(cause);
                     System.arraycopy(additionalActions, 0, queueActions, 1, additionalActions.length);
-                    if (p.scheduleBuild2(p.getQuietPeriod(), queueActions) != null) {
-                        LOGGER.info("SCM changes detected in "+ job.getFullDisplayName()+". Triggering "+name);
-                    } else {
+
+
+                    // check if Job with same SCMTriggerCause is in queue
+
+                    boolean sameTaskAlreadyAddedToQueue = false;
+                    Queue queue = Jenkins.get().getQueue();
+                    Queue.Item queueItem = queue.getItem((AbstractProject)p.asItem());
+                    List<CauseAction> queueItemCausese = queueItem.getActions(CauseAction.class);
+
+                    for (CauseAction itemCauseAction : queueItemCausese) {
+                        for (Cause itemCause : itemCauseAction.getCauses()) {
+                            if (itemCause instanceof SCMTriggerCause) {
+                                SCMTriggerCause itemSCMCause = (SCMTriggerCause)itemCause;
+
+                                if (itemSCMCause.equals(cause)) {
+                                    sameTaskAlreadyAddedToQueue = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if (sameTaskAlreadyAddedToQueue) {
                         LOGGER.info("SCM changes detected in "+ job.getFullDisplayName()+". Job is already in the queue");
+                    } else {
+                        if (p.scheduleBuild2(p.getQuietPeriod(), queueActions) != null) {
+                            LOGGER.info("SCM changes detected in "+ job.getFullDisplayName()+". Triggering "+name);
+                        } else {
+                            LOGGER.info("SCM changes detected in "+ job.getFullDisplayName()+". Reschedule job due to new changes in SCM.");
+                        }
                     }
                 }
             } finally {
